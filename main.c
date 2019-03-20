@@ -38,7 +38,6 @@ uint32_t g_tx_len;
 #define SPECTROGRAM_LENGTH LCD_X_MAX
 #define SPECTROGRAM_HEIGHT FFT_N/2
 
-#define BIN_START 0
 
 #define MIN_DB -30
 #define MAX_DB  20
@@ -167,6 +166,7 @@ int main(void)
     hann_init();
     pmax = MAX_DB ;
     pmin = MIN_DB ;
+    lcd_draw_string(SPECTROGRAM_HEIGHT + 10 , 120, "STFT", BLACK);
     while (1)
     {
 
@@ -176,9 +176,9 @@ int main(void)
 
         for ( i = 0; i < FFT_N / 2; ++i)
         {
+	    input_data = (fft_data_t *)&buffer_input[i];
             uint32_t v = ((uint32_t) rx_buf[2*i]) * ((uint32_t) hann[(i*2)]);
 	    v = v >> 16 ;
-            input_data = (fft_data_t *)&buffer_input[i];
             input_data->R1 = v ;
 	    //input_data->R1 = rx_buf[2*i];   // data_hard[2 * i].real;
             input_data->I1 = 0;             // data_hard[2 * i].imag;
@@ -191,14 +191,15 @@ int main(void)
 
         fft_complex_uint16_dma(DMAC_CHANNEL0, DMAC_CHANNEL1, FFT_FORWARD_SHIFT, FFT_DIR_FORWARD, buffer_input, FFT_N, buffer_output);
 
-        for ( i = 0; i < FFT_N / 2; i++)
+        for ( i = 0; i < SPECTROGRAM_HEIGHT / 2; i++)
         {
             output_data = (fft_data_t*)&buffer_output[i];
             data_hard[2 * i].imag = output_data->I1  ;
             data_hard[2 * i].real = output_data->R1  ;
             data_hard[2 * i + 1].imag = output_data->I2  ;
             data_hard[2 * i + 1].real = output_data->R2  ;
-        }
+	}
+
 
 	/*memcpy(&hard_power_spectrogram_disp[SPECTROGRAM_HEIGHT], hard_power_spectrogram, sizeof(float)*(SPECTROGRAM_HEIGHT*(SPECTROGRAM_LENGTH-1)));
         for (i = BIN_START; i < (SPECTROGRAM_HEIGHT+BIN_START); i++)//Only interested in one size of the FFT
@@ -215,18 +216,19 @@ int main(void)
 	//Trying to update buffer instead of doing the full buffer copy
 	//memcpy(&g_lcd_gram[LCD_Y_MAX], g_lcd_gram_old, (LCD_Y_MAX*(LCD_X_MAX-1))*sizeof(uint16_t));
 	memcpy(&g_lcd_gram[SPECTROGRAM_HEIGHT], g_lcd_gram_old, (SPECTROGRAM_HEIGHT*(SPECTROGRAM_LENGTH-1))*sizeof(uint16_t));
-	for (i = BIN_START; i < (SPECTROGRAM_HEIGHT+BIN_START); i++)//Only interested in one size of the FFT
+	for (i = 0; i < SPECTROGRAM_HEIGHT; i++)//Only interested in one size of the FFT
         {
             float pow = sqrt(data_hard[i].real * data_hard[i].real + data_hard[i].imag * data_hard[i].imag);
             pow = 2*pow/FFT_N  ;
             pow = 20*log(pow) ;
             uint16_t c = dbToColor(pow, pmax, pmin);
-            g_lcd_gram[(i-BIN_START)] = c ;
+            g_lcd_gram[i] = c ;
         }
 	//memcpy(&g_lcd_gram_old, g_lcd_gram, (LCD_Y_MAX*LCD_X_MAX)*sizeof(uint16_t));
         memcpy(&g_lcd_gram_old, g_lcd_gram, (SPECTROGRAM_HEIGHT*SPECTROGRAM_LENGTH)*sizeof(uint16_t));
 	//lcd_draw_picture(0, 0, LCD_Y_MAX, LCD_X_MAX, (uint32_t*) g_lcd_gram);
 	lcd_draw_picture(0, 0, SPECTROGRAM_HEIGHT, SPECTROGRAM_LENGTH, (uint32_t*) g_lcd_gram);
+	//lcd_draw_string(SPECTROGRAM_HEIGHT + 10 , 120, "STFT", BLACK);
     }
 
     return 0;

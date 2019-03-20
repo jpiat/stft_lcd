@@ -57,7 +57,8 @@ void lcd_init(uint32_t freq)
     tft_write_command(PIXEL_FORMAT_SET);
     data = 0x55;
     tft_write_byte(&data, 1);
-    lcd_set_direction(DIR_YX_LRDU);
+    //lcd_set_direction(DIR_YX_LRDU);
+    lcd_set_direction(DIR_YX_LRUD);
 
     /*display on*/
     tft_write_command(DISPALY_ON);
