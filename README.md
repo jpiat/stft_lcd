@@ -1,5 +1,8 @@
 # stft_lcd
 
+
+Largely inspired from https://github.com/MrJBSwe/fft_lcd.git
+
 Prerequisites toolchain
 https://github.com/kendryte
 
