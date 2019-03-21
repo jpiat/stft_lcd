@@ -31,12 +31,12 @@ uint32_t rx_buf[1024];
 uint32_t g_index;
 uint32_t g_tx_len;
 
-#define FRAME_LEN           512
 #define FFT_N               512U
+#define FRAME_LEN           FFT_N
 #define FFT_FORWARD_SHIFT   0x0U
 #define SAMPLE_RATE         16000
-#define SPECTROGRAM_LENGTH LCD_X_MAX
-#define SPECTROGRAM_HEIGHT FFT_N/2
+#define SPECTROGRAM_LENGTH (LCD_X_MAX-20)
+#define SPECTROGRAM_HEIGHT FFT_N/2//LCD_Y_MAX//FFT_N //(FFT_N/2 + 50)
 
 
 #define MIN_DB -30
@@ -167,12 +167,30 @@ int main(void)
     pmax = MAX_DB ;
     pmin = MIN_DB ;
     lcd_draw_string(SPECTROGRAM_HEIGHT + 10 , 120, "STFT", BLACK);
+    lcd_draw_string(SPECTROGRAM_HEIGHT/2-5 , SPECTROGRAM_LENGTH+5, "4", BLACK);
+    lcd_draw_string(SPECTROGRAM_HEIGHT/4-5 , SPECTROGRAM_LENGTH+5, "2", BLACK);
+    lcd_draw_string(3*(SPECTROGRAM_HEIGHT/4)-5 , SPECTROGRAM_LENGTH+5, "6", BLACK);
+    lcd_draw_string(SPECTROGRAM_HEIGHT-5 , SPECTROGRAM_LENGTH+5, "8", BLACK);
     while (1)
     {
 
 	//Channels layout is stereo 32bit aligned
 	memcpy(rx_buf, &rx_buf[FRAME_LEN], FRAME_LEN*sizeof(uint32_t));
         i2s_receive_data_dma(I2S_DEVICE_0, &rx_buf[FRAME_LEN], FRAME_LEN, DMAC_CHANNEL3);//Only getting the overlap of FFT_N/2
+	/*for ( i = 0; i < FFT_N / 2; ++i)
+        {
+            input_data = (fft_data_t *)&buffer_input[i]; 
+            uint32_t v = (8192/2+8192*cos(2*M_PI*3000*(((2*i)*1./SAMPLE_RATE)))) ;// *((uint32_t) hann[(i*2)]) ;
+            //v= v >> 16 ;
+	    input_data->R1 = v ;
+            //input_data->R1 = rx_buf[2*i];   // data_hard[2 * i].real;
+            input_data->I1 = 0;             // data_hard[2 * i].imag;
+            v = (8192/2+8192*cos(2*M_PI*3000*(((2*i+1)*1./SAMPLE_RATE)))) ;// *((uint32_t) hann[(i*2)]);
+            //v = v >> 16 ;
+            input_data->R2 = v;
+            //input_data->R2 = rx_buf[2*i+1]; // data_hard[2 * i + 1].real;
+            input_data->I2 = 0;             // data_hard[2 * i + 1].imag;
+        }*/
 
         for ( i = 0; i < FFT_N / 2; ++i)
         {
@@ -189,17 +207,36 @@ int main(void)
             input_data->I2 = 0;             // data_hard[2 * i + 1].imag;
         }
 
+
         fft_complex_uint16_dma(DMAC_CHANNEL0, DMAC_CHANNEL1, FFT_FORWARD_SHIFT, FFT_DIR_FORWARD, buffer_input, FFT_N, buffer_output);
 
-        for ( i = 0; i < SPECTROGRAM_HEIGHT / 2; i++)
+	for ( i = 0; i < FFT_N / 8; i++)
+        {
+            output_data = (fft_data_t*)&buffer_output[i];
+            data_hard[4 * i].imag = output_data->I1  ;
+            data_hard[4 * i].real = output_data->R1  ;
+            data_hard[4 * i + 1].imag = output_data->I2  ;
+            data_hard[4 * i + 1].real = output_data->R2  ;
+            output_data = (fft_data_t*)&buffer_output[FFT_N / 4 - 1 - i];
+            data_hard[4 * i + 2].imag = output_data->I1  ;
+            data_hard[4 * i + 2].real = output_data->R1  ;
+            data_hard[4 * i + 3].imag = output_data->I2  ;
+            data_hard[4 * i + 3].real = output_data->R2  ;
+	}
+
+
+
+/*
+
+	for ( i = 0; i < SPECTROGRAM_HEIGHT / 2; i++)
         {
             output_data = (fft_data_t*)&buffer_output[i];
             data_hard[2 * i].imag = output_data->I1  ;
             data_hard[2 * i].real = output_data->R1  ;
             data_hard[2 * i + 1].imag = output_data->I2  ;
             data_hard[2 * i + 1].real = output_data->R2  ;
-	}
-
+        }
+*/
 
 	/*memcpy(&hard_power_spectrogram_disp[SPECTROGRAM_HEIGHT], hard_power_spectrogram, sizeof(float)*(SPECTROGRAM_HEIGHT*(SPECTROGRAM_LENGTH-1)));
         for (i = BIN_START; i < (SPECTROGRAM_HEIGHT+BIN_START); i++)//Only interested in one size of the FFT
