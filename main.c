@@ -27,7 +27,8 @@
 #include "lcd.h"
 #include "board_config.h"
 
-uint32_t rx_buf[1024];
+int32_t rx_buf[1024];
+//int16_t rx_buf[1024];
 uint32_t g_index;
 uint32_t g_tx_len;
 
@@ -40,7 +41,7 @@ uint32_t g_tx_len;
 
 
 #define MIN_DB -30
-#define MAX_DB  20
+#define MAX_DB  140
 
 /*static uint16_t gray2rgb565[64]={
 0x0000, 0x2000, 0x4108, 0x6108, 0x8210, 0xa210, 0xc318, 0xe318, 
@@ -67,7 +68,7 @@ float    hard_power[FFT_N];
 uint64_t fft_out_data[FFT_N / 2];
 uint64_t buffer_input[FFT_N];
 uint64_t buffer_output[FFT_N];
-
+complex_hard_t data_hard[FFT_N];
 
 uint16_t hann[FFT_N];
 
@@ -127,8 +128,17 @@ uint16_t color_scale(float value)
 
 void hann_init(){
 	for (int i = 0; i < FFT_N; i++) {
-    		float multiplier = 0.5f * (1.f - cos(2.f*M_PI*i/(FFT_N))) * 65535.f;// FP Q1.16
+    		float multiplier = 0.5f * (1.f - cos(2.f*M_PI*i/(FFT_N-1))) * 65535.f;// FP Q1.16
 		hann[i] = floor(multiplier) ;
+	}
+}
+
+void generate_sinewave_stereo(uint32_t freq, int32_t * buffer, uint32_t nb_samples){
+	int i;
+	for(i = 0 ; i < nb_samples ; i ++){
+		int32_t temp = 2048*cosf(2*M_PI*freq*(i*1./SAMPLE_RATE));
+		buffer[i*2] = temp ;
+		buffer[i*2+1] = temp;
 	}
 }
 
@@ -138,11 +148,11 @@ int main(void)
 {
     int i;
     float pmax = 0 , pmin = 0;
+    char title_buffer [8] = {0} ;
 
-    complex_hard_t data_hard[FFT_N] = {0};
     fft_data_t *output_data;
     fft_data_t *input_data;
-
+ 
 
     sysctl_pll_set_freq(SYSCTL_PLL0, 480000000UL);
     sysctl_pll_set_freq(SYSCTL_PLL1, 160000000UL);
@@ -167,40 +177,32 @@ int main(void)
     pmax = MAX_DB ;
     pmin = MIN_DB ;
     lcd_draw_string(SPECTROGRAM_HEIGHT + 10 , 120, "STFT", BLACK);
-    lcd_draw_string(SPECTROGRAM_HEIGHT/2-5 , SPECTROGRAM_LENGTH+5, "4", BLACK);
-    lcd_draw_string(SPECTROGRAM_HEIGHT/4-5 , SPECTROGRAM_LENGTH+5, "2", BLACK);
-    lcd_draw_string(3*(SPECTROGRAM_HEIGHT/4)-5 , SPECTROGRAM_LENGTH+5, "6", BLACK);
-    lcd_draw_string(SPECTROGRAM_HEIGHT-5 , SPECTROGRAM_LENGTH+5, "8", BLACK);
+    sprintf(title_buffer,"%u",SAMPLE_RATE/8000);
+    lcd_draw_string(SPECTROGRAM_HEIGHT/4-5 , SPECTROGRAM_LENGTH+5, title_buffer, BLACK);
+    sprintf(title_buffer,"%u",SAMPLE_RATE/4000);
+    lcd_draw_string(SPECTROGRAM_HEIGHT/2-5 , SPECTROGRAM_LENGTH+5, title_buffer, BLACK);
+    sprintf(title_buffer,"%u",3*SAMPLE_RATE/8000);
+    lcd_draw_string(3*(SPECTROGRAM_HEIGHT/4)-5 , SPECTROGRAM_LENGTH+5, title_buffer, BLACK);
+    sprintf(title_buffer,"%u",SAMPLE_RATE/2000);
+    lcd_draw_string(SPECTROGRAM_HEIGHT-5 , SPECTROGRAM_LENGTH+5, title_buffer, BLACK);
     while (1)
     {
 
 	//Channels layout is stereo 32bit aligned
-	memcpy(rx_buf, &rx_buf[FRAME_LEN], FRAME_LEN*sizeof(uint32_t));
-        i2s_receive_data_dma(I2S_DEVICE_0, &rx_buf[FRAME_LEN], FRAME_LEN, DMAC_CHANNEL3);//Only getting the overlap of FFT_N/2
-	/*for ( i = 0; i < FFT_N / 2; ++i)
-        {
-            input_data = (fft_data_t *)&buffer_input[i]; 
-            uint32_t v = (8192/2+8192*cos(2*M_PI*3000*(((2*i)*1./SAMPLE_RATE)))) ;// *((uint32_t) hann[(i*2)]) ;
-            //v= v >> 16 ;
-	    input_data->R1 = v ;
-            //input_data->R1 = rx_buf[2*i];   // data_hard[2 * i].real;
-            input_data->I1 = 0;             // data_hard[2 * i].imag;
-            v = (8192/2+8192*cos(2*M_PI*3000*(((2*i+1)*1./SAMPLE_RATE)))) ;// *((uint32_t) hann[(i*2)]);
-            //v = v >> 16 ;
-            input_data->R2 = v;
-            //input_data->R2 = rx_buf[2*i+1]; // data_hard[2 * i + 1].real;
-            input_data->I2 = 0;             // data_hard[2 * i + 1].imag;
-        }*/
-
+	//memcpy(rx_buf, &rx_buf[FRAME_LEN/2], FRAME_LEN/2*sizeof(int32_t));//To overlap samples ...
+        //i2s_receive_data_dma(I2S_DEVICE_0, (uint32_t *) &rx_buf[FRAME_LEN/2], FRAME_LEN, DMAC_CHANNEL3);//Only getting the overlap of FFT_N/2
+	i2s_receive_data_dma(I2S_DEVICE_0, (uint32_t *) rx_buf, FRAME_LEN * 2, DMAC_CHANNEL3);//This receive  interlaced 32-bits samples RLRLRLRLRL
+	//i2s_receive_data(I2S_DEVICE_0,I2S_CHANNEL_0, (uint32_t *) rx_buf, FRAME_LEN);
+	//generate_sinewave_stereo(2000, (int32_t *) rx_buf, FRAME_LEN);
         for ( i = 0; i < FFT_N / 2; ++i)
         {
 	    input_data = (fft_data_t *)&buffer_input[i];
-            uint32_t v = ((uint32_t) rx_buf[2*i]) * ((uint32_t) hann[(i*2)]);
+	    int32_t v = ((int32_t) (rx_buf[4*i])) * ((int32_t) hann[(i*2)]);
 	    v = v >> 16 ;
             input_data->R1 = v ;
 	    //input_data->R1 = rx_buf[2*i];   // data_hard[2 * i].real;
             input_data->I1 = 0;             // data_hard[2 * i].imag;
-            v = ((uint32_t) rx_buf[(2*i)+1]) * ((uint32_t) hann[(i*2)+1]);
+            v = ((uint32_t) rx_buf[(4*i)+2]) * ((uint32_t) hann[(i*2)+1]);
             v = v >> 16 ;
 	    input_data->R2 = v;
 	    //input_data->R2 = rx_buf[2*i+1]; // data_hard[2 * i + 1].real;
@@ -210,6 +212,7 @@ int main(void)
 
         fft_complex_uint16_dma(DMAC_CHANNEL0, DMAC_CHANNEL1, FFT_FORWARD_SHIFT, FFT_DIR_FORWARD, buffer_input, FFT_N, buffer_output);
 
+	/*Trying one way to sort the samples
 	for ( i = 0; i < FFT_N / 8; i++)
         {
             output_data = (fft_data_t*)&buffer_output[i];
@@ -217,16 +220,14 @@ int main(void)
             data_hard[4 * i].real = output_data->R1  ;
             data_hard[4 * i + 1].imag = output_data->I2  ;
             data_hard[4 * i + 1].real = output_data->R2  ;
-            output_data = (fft_data_t*)&buffer_output[FFT_N / 4 - 1 - i];
+            output_data = (fft_data_t*)&buffer_output[FFT_N / 2 - i - 1];
             data_hard[4 * i + 2].imag = output_data->I1  ;
             data_hard[4 * i + 2].real = output_data->R1  ;
             data_hard[4 * i + 3].imag = output_data->I2  ;
             data_hard[4 * i + 3].real = output_data->R2  ;
 	}
+	*/
 
-
-
-/*
 
 	for ( i = 0; i < SPECTROGRAM_HEIGHT / 2; i++)
         {
@@ -236,22 +237,7 @@ int main(void)
             data_hard[2 * i + 1].imag = output_data->I2  ;
             data_hard[2 * i + 1].real = output_data->R2  ;
         }
-*/
 
-	/*memcpy(&hard_power_spectrogram_disp[SPECTROGRAM_HEIGHT], hard_power_spectrogram, sizeof(float)*(SPECTROGRAM_HEIGHT*(SPECTROGRAM_LENGTH-1)));
-        for (i = BIN_START; i < (SPECTROGRAM_HEIGHT+BIN_START); i++)//Only interested in one size of the FFT
-        {
-            float pow = sqrt(data_hard[i].real * data_hard[i].real + data_hard[i].imag * data_hard[i].imag);
-            pow = 2*pow/FFT_N  ;
-	    pow = 20*log(pow) ;
-	    if(pow > pmax) pmax = pow ;
-	    hard_power_spectrogram_disp[i-BIN_START] = pow ;
-        }
-	memcpy(hard_power_spectrogram, hard_power_spectrogram_disp, sizeof(float)*(SPECTROGRAM_HEIGHT*SPECTROGRAM_LENGTH));
-	update_image(hard_power_spectrogram_disp, pmax, pmin, g_lcd_gram);*/
-	
-	//Trying to update buffer instead of doing the full buffer copy
-	//memcpy(&g_lcd_gram[LCD_Y_MAX], g_lcd_gram_old, (LCD_Y_MAX*(LCD_X_MAX-1))*sizeof(uint16_t));
 	memcpy(&g_lcd_gram[SPECTROGRAM_HEIGHT], g_lcd_gram_old, (SPECTROGRAM_HEIGHT*(SPECTROGRAM_LENGTH-1))*sizeof(uint16_t));
 	for (i = 0; i < SPECTROGRAM_HEIGHT; i++)//Only interested in one size of the FFT
         {
@@ -261,11 +247,8 @@ int main(void)
             uint16_t c = dbToColor(pow, pmax, pmin);
             g_lcd_gram[i] = c ;
         }
-	//memcpy(&g_lcd_gram_old, g_lcd_gram, (LCD_Y_MAX*LCD_X_MAX)*sizeof(uint16_t));
         memcpy(&g_lcd_gram_old, g_lcd_gram, (SPECTROGRAM_HEIGHT*SPECTROGRAM_LENGTH)*sizeof(uint16_t));
-	//lcd_draw_picture(0, 0, LCD_Y_MAX, LCD_X_MAX, (uint32_t*) g_lcd_gram);
 	lcd_draw_picture(0, 0, SPECTROGRAM_HEIGHT, SPECTROGRAM_LENGTH, (uint32_t*) g_lcd_gram);
-	//lcd_draw_string(SPECTROGRAM_HEIGHT + 10 , 120, "STFT", BLACK);
     }
 
     return 0;
