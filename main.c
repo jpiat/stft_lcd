@@ -301,9 +301,8 @@ int main(void)
 	memcpy(&g_lcd_gram[SPECTROGRAM_HEIGHT], g_lcd_gram_old, (SPECTROGRAM_HEIGHT*(SPECTROGRAM_LENGTH-1))*sizeof(uint16_t));
 	for (i = 0; i < SPECTROGRAM_HEIGHT; i++)//Only interested in one size of the FFT
         {
-            float pow = sqrt(data_hard[i].real * data_hard[i].real + data_hard[i].imag * data_hard[i].imag);
-            pow = pow/FFT_N  ;
-            pow = 20*log(pow) ;
+            float pow = data_hard[i].real * data_hard[i].real + data_hard[i].imag * data_hard[i].imag;
+            pow = 0.5*20*log10(pow)-log10(FFT_N) ;
             uint16_t c = dbToColor(pow, pmax, pmin);
             g_lcd_gram[i] = c ;
         }
