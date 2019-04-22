@@ -35,13 +35,13 @@ uint32_t g_tx_len;
 #define FFT_N               512U
 #define FRAME_LEN           FFT_N
 #define FFT_FORWARD_SHIFT   0x0U
-#define SAMPLE_RATE         23040
+#define SAMPLE_RATE         16000
 #define SPECTROGRAM_LENGTH (LCD_X_MAX-20)
 #define SPECTROGRAM_HEIGHT FFT_N/2//LCD_Y_MAX//FFT_N //(FFT_N/2 + 50)
 
 
 #define MIN_DB -50
-#define MAX_DB  50
+#define MAX_DB  30
 
 /*static uint16_t gray2rgb565[64]={
 0x0000, 0x2000, 0x4108, 0x6108, 0x8210, 0xa210, 0xc318, 0xe318, 
@@ -139,7 +139,8 @@ uint64_t buffer_output[FFT_N];
 complex_hard_t data_hard[FFT_N];
 
 uint16_t hann[FFT_N];
-#define FPS_MODULO (SAMPLE_RATE/FFT_N/2/30) 
+//#define FPS_MODULO ((uint32_t) ((SAMPLE_RATE/FFT_N))/25) 
+#define FPS_MODULO 0
 uint16_t fps_counter;
 
 uint16_t get_bit1_num(uint32_t data)
@@ -265,9 +266,9 @@ int main(void)
     {
 
 	//Channels layout is stereo 32bit aligned
-	memcpy(rx_buf, &rx_buf[FRAME_LEN], FRAME_LEN*sizeof(int32_t));//To overlap samples ...
-        i2s_receive_data_dma(I2S_DEVICE_0, (uint32_t *) &rx_buf[FRAME_LEN], FRAME_LEN, DMAC_CHANNEL3);//Only getting the overlap of FFT_N/2
-	//i2s_receive_data_dma(I2S_DEVICE_0, (uint32_t *) rx_buf, FRAME_LEN * 2, DMAC_CHANNEL3);//This receive  interlaced 32-bits samples RLRLRLRLRL
+	//memcpy(rx_buf, &rx_buf[FRAME_LEN], FRAME_LEN*sizeof(int32_t));//To overlap samples ...
+        //i2s_receive_data_dma(I2S_DEVICE_0, (uint32_t *) &rx_buf[FRAME_LEN], FRAME_LEN, DMAC_CHANNEL3);//Only getting the overlap of FFT_N/2
+	i2s_receive_data_dma(I2S_DEVICE_0, (uint32_t *) rx_buf, FRAME_LEN * 2, DMAC_CHANNEL3);//This receive  interlaced 32-bits samples RLRLRLRLRL
 	//i2s_receive_data(I2S_DEVICE_0,I2S_CHANNEL_0, (uint32_t *) rx_buf, FRAME_LEN);
 	//generate_sinewave_stereo(2000, (int32_t *) rx_buf, FRAME_LEN);
         for ( i = 0; i < FFT_N / 2; ++i)
@@ -301,10 +302,12 @@ int main(void)
 	memcpy(&g_lcd_gram[SPECTROGRAM_HEIGHT], g_lcd_gram_old, (SPECTROGRAM_HEIGHT*(SPECTROGRAM_LENGTH-1))*sizeof(uint16_t));
 	for (i = 0; i < SPECTROGRAM_HEIGHT; i++)//Only interested in one size of the FFT
         {
-            float pow = data_hard[i].real * data_hard[i].real + data_hard[i].imag * data_hard[i].imag;
-            pow = 0.5*20*log10(pow)-log10(FFT_N) ;
-            uint16_t c = dbToColor(pow, pmax, pmin);
-            g_lcd_gram[i] = c ;
+           float pow = data_hard[i].real * data_hard[i].real + data_hard[i].imag * data_hard[i].imag;
+           pow = 20*(0.5*log(pow)-log(FFT_N)) ;
+	   /*float pow = sqrt(data_hard[i].real * data_hard[i].real + data_hard[i].imag * data_hard[i].imag)/FFT_N; 
+	   pow = 20*log10(pow);*/
+           uint16_t c = dbToColor(pow, pmax, pmin);
+           g_lcd_gram[i] = c ;
         }
         memcpy(&g_lcd_gram_old, g_lcd_gram, (SPECTROGRAM_HEIGHT*SPECTROGRAM_LENGTH)*sizeof(uint16_t));
 	fps_counter ++ ;
